@@ -1016,7 +1016,7 @@ export class Frontend {
                 top: `${Math.max(0, bottom - 2)}px`,
                 width: `${width}px`,
                 height: '0',
-                borderBottom: '2px dotted rgba(37, 99, 235, 0.95)',
+                borderBottom: '2px dotted #990020',
                 boxSizing: 'border-box',
                 pointerEvents: 'none',
             });
