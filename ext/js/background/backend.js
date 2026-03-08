@@ -2014,7 +2014,7 @@ export class Backend {
             const options = this._getProfileOptions({current: true}, false);
             if (!options.general.enable) {
                 status = 'Disabled';
-            } else if (!this._hasRequiredPermissionsForSettings(options)) {
+            } else if (!this._isSafariWebExtension() && !this._hasRequiredPermissionsForSettings(options)) {
                 text = '!';
                 color = '#f0ad4e';
                 status = 'Some settings require additional permissions';

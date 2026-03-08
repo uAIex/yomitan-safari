@@ -90,6 +90,7 @@ export class PopupInline extends EventDispatcher {
         this._ankiFieldTemplates = null;
         this._templateRenderer = new TemplateRendererProxy();
         this._ankiNoteBuilder = new AnkiNoteBuilder(this._application.api, this._templateRenderer);
+        this._renderToken = null;
         this._savedPosition = null;
         this._positionLoaded = false;
         this._dragState = null;
@@ -211,9 +212,15 @@ export class PopupInline extends EventDispatcher {
 
         this.stopHideDelayed();
         this.prepare();
-        await this._render(displayDetails);
+        const renderToken = {};
+        this._renderToken = renderToken;
+        await this._render(displayDetails, renderToken);
+        if (this._renderToken !== renderToken) { return; }
         await this._ensurePositionLoaded();
-        this._position(details.sourceRects);
+        if (this._renderToken !== renderToken) { return; }
+        if (!this._visible || !this._frameRect.valid) {
+            this._position(details.sourceRects);
+        }
         this._visible = true;
         this._container.hidden = false;
         this._container.style.display = 'block';
@@ -341,16 +348,16 @@ export class PopupInline extends EventDispatcher {
         };
     }
 
-    async _render(displayDetails) {
+    async _render(displayDetails, renderToken) {
         const contentRoot = await this._ensureRenderer();
+        if (this._renderToken !== renderToken) { return; }
+        const fragment = document.createDocumentFragment();
         if (displayDetails === null) {
             if (contentRoot.childElementCount === 0) {
                 contentRoot.replaceChildren(this._createMessage('No popup content available.'));
             }
             return;
         }
-
-        contentRoot.replaceChildren();
 
         const {content} = displayDetails;
         const dictionaryEntries = Array.isArray(content?.dictionaryEntries) ? content.dictionaryEntries : [];
@@ -361,12 +368,15 @@ export class PopupInline extends EventDispatcher {
         }
 
         if (dictionaryEntries.length === 0) {
-            contentRoot.appendChild(this._createMessage('No results found.'));
+            fragment.appendChild(this._createMessage('No results found.'));
+            if (this._renderToken !== renderToken) { return; }
+            contentRoot.replaceChildren(fragment);
             return;
         }
 
         displayContentManager.unloadAll();
         const dictionaryInfo = await this._getDictionaryInfo();
+        if (this._renderToken !== renderToken) { return; }
         for (const entry of dictionaryEntries.slice(0, 8)) {
             const node = (
                 entry.type === 'kanji' ?
@@ -374,8 +384,11 @@ export class PopupInline extends EventDispatcher {
                 displayGenerator.createTermEntry(entry, dictionaryInfo)
             );
             await this._addAnkiActions(entry, node, displayDetails);
-            contentRoot.appendChild(node);
+            if (this._renderToken !== renderToken) { return; }
+            fragment.appendChild(node);
         }
+        if (this._renderToken !== renderToken) { return; }
+        contentRoot.replaceChildren(fragment);
         await displayContentManager.executeMediaRequests();
     }
 
@@ -742,6 +755,9 @@ export class PopupInline extends EventDispatcher {
 }
 .entry + .entry {
     border-top: 1px solid var(--light-border-color);
+}
+.headword-list .headword-details > .action-button[data-action="play-audio"] {
+    display: none !important;
 }
 .entry-current-indicator,
 .entry-current-indicator-icon,
