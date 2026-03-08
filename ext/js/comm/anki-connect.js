@@ -42,7 +42,7 @@ export class AnkiConnect {
         /** @type {?string} */
         this._apiKey = null;
         /** @type {string[]} */
-        this._nativeMessagingApplications = ['yomitan_anki'];
+        this._nativeMessagingApplications = this._getDefaultNativeMessagingApplications();
     }
 
     /**
@@ -646,6 +646,26 @@ export class AnkiConnect {
      */
     _sendNativeMessage(message) {
         return this._sendNativeMessageWithFallback(this._nativeMessagingApplications, message);
+    }
+
+    /**
+     * Builds a Safari-friendly native host fallback list.
+     * The first value matches the extension bundle id when running in Safari.
+     * @returns {string[]}
+     */
+    _getDefaultNativeMessagingApplications() {
+        /** @type {string[]} */
+        const applications = [];
+        const runtimeId = chrome?.runtime?.id;
+        if (typeof runtimeId === 'string' && runtimeId.length > 0) {
+            const extensionId = runtimeId.replace(/\s+\([^)]+\)$/, '');
+            applications.push(extensionId);
+            if (extensionId.endsWith('.extension')) {
+                applications.push(extensionId.substring(0, extensionId.length - '.extension'.length));
+            }
+        }
+        applications.push('yomitan_anki');
+        return [...new Set(applications)];
     }
 
     /**

@@ -18,8 +18,12 @@
 
 import {EventDispatcher} from '../core/event-dispatcher.js';
 import {generateId} from '../core/utilities.js';
+import {AnkiNoteBuilder} from '../data/anki-note-builder.js';
+import {getDynamicTemplates} from '../data/anki-template-util.js';
+import {INVALID_NOTE_ID} from '../data/anki-util.js';
 import {DisplayContentManager} from '../display/display-content-manager.js';
 import {DisplayGenerator} from '../display/display-generator.js';
+import {TemplateRendererProxy} from '../templates/template-renderer-proxy.js';
 
 export class PopupInline extends EventDispatcher {
     constructor(application, id, depth, frameId, childrenSupported) {
@@ -82,6 +86,10 @@ export class PopupInline extends EventDispatcher {
         this._displayContentManager = null;
         this._dictionaryInfo = null;
         this._setupPromise = null;
+        this._options = null;
+        this._ankiFieldTemplates = null;
+        this._templateRenderer = new TemplateRendererProxy();
+        this._ankiNoteBuilder = new AnkiNoteBuilder(this._application.api, this._templateRenderer);
         this._savedPosition = null;
         this._positionLoaded = false;
         this._dragState = null;
@@ -112,6 +120,7 @@ export class PopupInline extends EventDispatcher {
         const optionsContext2 = this._normalizeOptionsContext(optionsContext);
         this._optionsContext = optionsContext2;
         const options = await this._application.api.optionsGet(optionsContext2);
+        this._options = options;
         const {general, scanning} = options;
         this._initialWidth = general.popupWidth;
         this._initialHeight = general.popupHeight;
@@ -364,9 +373,143 @@ export class PopupInline extends EventDispatcher {
                 displayGenerator.createKanjiEntry(entry, dictionaryInfo) :
                 displayGenerator.createTermEntry(entry, dictionaryInfo)
             );
+            await this._addAnkiActions(entry, node, displayDetails);
             contentRoot.appendChild(node);
         }
         await displayContentManager.executeMediaRequests();
+    }
+
+    async _addAnkiActions(dictionaryEntry, node, displayDetails) {
+        const options = this._options;
+        if (options === null || !options.anki.enable) { return; }
+
+        const noteActionsContainer = node.querySelector('.note-actions-container');
+        if (!(noteActionsContainer instanceof HTMLElement)) { return; }
+
+        const cardFormats = options.anki.cardFormats.filter((cardFormat) => cardFormat.type === dictionaryEntry.type);
+        if (cardFormats.length === 0) { return; }
+
+        const template = await this._getAnkiFieldTemplates(options);
+        const context = this._createAnkiContext(displayDetails);
+        const dictionaryStylesMap = this._ankiNoteBuilder.getDictionaryStylesMap(options.dictionaries);
+
+        for (const [cardFormatIndex, cardFormat] of cardFormats.entries()) {
+            if (!cardFormat.deck || !cardFormat.model) { continue; }
+
+            let note;
+            try {
+                ({note} = await this._ankiNoteBuilder.createNote({
+                    dictionaryEntry,
+                    cardFormat,
+                    context,
+                    template,
+                    tags: options.anki.tags,
+                    duplicateScope: options.anki.duplicateScope,
+                    duplicateScopeCheckAllModels: options.anki.duplicateScopeCheckAllModels,
+                    resultOutputMode: options.general.resultOutputMode,
+                    glossaryLayoutMode: options.general.glossaryLayoutMode,
+                    compactTags: options.general.compactTags,
+                    mediaOptions: null,
+                    requirements: [],
+                    dictionaryStylesMap,
+                }));
+            } catch (e) {
+                console.error('[Yomitan][Safari][InlinePopup][Anki] Failed to build note', e);
+                continue;
+            }
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'action-button-container';
+            buttonContainer.dataset.cardFormatIndex = `${cardFormatIndex}`;
+
+            const saveButton = this._createInlineActionButton(cardFormat.icon, `Add ${cardFormat.name} note`);
+            saveButton.dataset.action = 'save-note';
+            saveButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                saveButton.disabled = true;
+                try {
+                    const noteId = await this._application.api.addAnkiNote(note);
+                    console.log('[Yomitan][Safari][InlinePopup][Anki] addAnkiNote', {noteId, cardFormat: cardFormat.name});
+                    if (typeof noteId === 'number' && noteId > 0) {
+                        const viewButton = this._createInlineActionButton('view-note', `View ${cardFormat.name} note`);
+                        viewButton.dataset.action = 'view-note';
+                        viewButton.addEventListener('click', async (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            await this._application.api.viewNotes([noteId], options.anki.noteGuiMode, false);
+                        }, false);
+                        buttonContainer.replaceChildren(viewButton);
+                    } else {
+                        saveButton.disabled = false;
+                    }
+                } catch (error) {
+                    console.error('[Yomitan][Safari][InlinePopup][Anki] addAnkiNote failed', error);
+                    saveButton.disabled = false;
+                }
+            }, false);
+            buttonContainer.appendChild(saveButton);
+
+            try {
+                const [noteInfo] = await this._application.api.getAnkiNoteInfo([note], false);
+                const noteIds = Array.isArray(noteInfo?.noteIds) ? noteInfo.noteIds.filter((id) => id !== INVALID_NOTE_ID) : [];
+                if (noteIds.length > 0) {
+                    const viewButton = this._createInlineActionButton('view-note', `View ${cardFormat.name} note`);
+                    viewButton.dataset.action = 'view-note';
+                    viewButton.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await this._application.api.viewNotes(noteIds, options.anki.noteGuiMode, false);
+                    }, false);
+                    buttonContainer.replaceChildren(viewButton);
+                }
+            } catch (error) {
+                console.error('[Yomitan][Safari][InlinePopup][Anki] getAnkiNoteInfo failed', error);
+            }
+
+            noteActionsContainer.appendChild(buttonContainer);
+        }
+    }
+
+    _createInlineActionButton(icon, title) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'action-button';
+        button.title = title;
+        const iconNode = document.createElement('span');
+        iconNode.className = 'action-icon icon color-icon';
+        iconNode.dataset.icon = icon;
+        button.appendChild(iconNode);
+        return button;
+    }
+
+    _createAnkiContext(displayDetails) {
+        const historyState = (typeof displayDetails?.state === 'object' && displayDetails.state !== null) ? displayDetails.state : {};
+        const sentence = (typeof historyState.sentence === 'object' && historyState.sentence !== null) ? historyState.sentence : null;
+        const query = typeof displayDetails?.params?.query === 'string' ? displayDetails.params.query : '';
+        return {
+            url: typeof historyState.url === 'string' ? historyState.url : window.location.href,
+            documentTitle: typeof historyState.documentTitle === 'string' ? historyState.documentTitle : document.title,
+            query,
+            fullQuery: typeof sentence?.text === 'string' ? sentence.text : query,
+            sentence: {
+                text: typeof sentence?.text === 'string' ? sentence.text : query,
+                offset: typeof sentence?.offset === 'number' ? sentence.offset : 0,
+            },
+        };
+    }
+
+    async _getAnkiFieldTemplates(options) {
+        if (typeof options.anki.fieldTemplates === 'string') {
+            return options.anki.fieldTemplates;
+        }
+        if (typeof this._ankiFieldTemplates === 'string') {
+            return this._ankiFieldTemplates;
+        }
+        const dictionaryInfo = await this._getDictionaryInfo();
+        const staticTemplates = await this._application.api.getDefaultAnkiFieldTemplates();
+        this._ankiFieldTemplates = staticTemplates + getDynamicTemplates(options, dictionaryInfo);
+        return this._ankiFieldTemplates;
     }
 
     _createMessage(text) {
@@ -529,7 +672,10 @@ export class PopupInline extends EventDispatcher {
     }
 
     _transformInlineCss(css) {
+        const extensionRoot = chrome.runtime.getURL('/');
         return css
+            .replaceAll("url('/", `url('${extensionRoot}`)
+            .replaceAll('url("/', `url("${extensionRoot}`)
             .replaceAll(':root', ':host')
             .replaceAll('html[data-page-type=popup]', ':host')
             .replaceAll('html[data-page-type="popup"]', ':host')
@@ -597,11 +743,8 @@ export class PopupInline extends EventDispatcher {
 .entry + .entry {
     border-top: 1px solid var(--light-border-color);
 }
-.actions,
 .entry-current-indicator,
 .entry-current-indicator-icon,
-.action-button-container,
-.action-button,
 .action-popup-menu-button,
 .action-popup-button,
 .action-button-badge,

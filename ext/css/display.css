@@ -2025,8 +2025,8 @@ button.footer-notification-close-button {
 :root:not([data-debug=true]) .action-button[data-action=menu] {
     display: none;
 }
-:root[data-anki-enabled=false] .action-button[data-action=view-note],
-:root[data-anki-enabled=false] .action-button[data-action=save-note] {
+:root[data-anki-enabled=false]:not([data-browser=safari]) .action-button[data-action=view-note],
+:root[data-anki-enabled=false]:not([data-browser=safari]) .action-button[data-action=save-note] {
     display: none;
 }
 

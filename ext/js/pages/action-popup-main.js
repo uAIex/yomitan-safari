@@ -35,6 +35,10 @@ class DisplayController {
         this._themeController = new ThemeController(document.documentElement);
         /** @type {HotkeyUtil} */
         this._hotkeyUtil = new HotkeyUtil();
+        /** @type {?HTMLElement} */
+        this._ankiDebugPanel = document.querySelector('#anki-debug-panel');
+        /** @type {?HTMLElement} */
+        this._ankiDebugLog = document.querySelector('#anki-debug-log');
     }
 
     /** */
@@ -70,6 +74,8 @@ class DisplayController {
         if (defaultProfile !== null) {
             this._setupOptions(defaultProfile);
         }
+
+        void this._runAnkiDebug(defaultProfile);
 
         /** @type {NodeListOf<HTMLElement>} */
         const profileSelect = document.querySelectorAll('.action-select-profile');
@@ -367,6 +373,156 @@ class DisplayController {
     async _isSafari() {
         const {browser} = await this._api.getEnvironmentInfo();
         return browser === 'safari';
+    }
+
+    /**
+     * @param {?import('settings').Profile} profile
+     */
+    async _runAnkiDebug(profile) {
+        if (!await this._isSafari()) { return; }
+
+        this._appendAnkiDebugLine('Toolbar action page loaded');
+        this._appendAnkiDebugLine(`runtime.id: ${chrome.runtime.id}`);
+
+        const options = profile?.options ?? null;
+        if (options !== null) {
+            this._appendAnkiDebugLine(`anki.enable: ${options.anki.enable}`);
+            this._appendAnkiDebugLine(`anki.cardFormats: ${options.anki.cardFormats.length}`);
+            this._appendAnkiDebugLine(`anki.server: ${options.anki.server}`);
+            this._appendAnkiDebugLine(`popupDisplayMode: ${options.general.popupDisplayMode}`);
+            this._appendAnkiDebugLine(`displayTagsAndFlags: ${options.anki.displayTagsAndFlags}`);
+            this._appendAnkiDebugLine(`checkForDuplicates: ${options.anki.checkForDuplicates}`);
+            this._appendAnkiDebugLine(`duplicateBehavior: ${options.anki.duplicateBehavior}`);
+            for (const [index, cardFormat] of options.anki.cardFormats.entries()) {
+                this._appendAnkiDebugLine(`cardFormat[${index}]: ${cardFormat.name} (${cardFormat.type}) deck=${cardFormat.deck} model=${cardFormat.model}`);
+            }
+        } else {
+            this._appendAnkiDebugLine('No profile options available');
+        }
+
+        try {
+            const permissions = await getAllPermissions();
+            const nativeMessagingEnabled = Array.isArray(permissions.permissions) && permissions.permissions.includes('nativeMessaging');
+            this._appendAnkiDebugLine(`nativeMessaging permission: ${nativeMessagingEnabled}`);
+        } catch (e) {
+            this._appendAnkiDebugLine(`permissions error: ${this._errorToString(e)}`);
+        }
+
+        try {
+            const isConnected = await this._api.isAnkiConnected();
+            this._appendAnkiDebugLine(`isAnkiConnected: ${isConnected}`);
+        } catch (e) {
+            this._appendAnkiDebugLine(`isAnkiConnected error: ${this._errorToString(e)}`);
+        }
+
+        try {
+            const version = await this._api.getAnkiConnectVersion();
+            this._appendAnkiDebugLine(`getAnkiConnectVersion: ${version}`);
+        } catch (e) {
+            this._appendAnkiDebugLine(`getAnkiConnectVersion error: ${this._errorToString(e)}`);
+        }
+
+        await this._runNativeAnkiBridgeDebug(options?.anki.server ?? 'http://127.0.0.1:8765');
+    }
+
+    /**
+     * @param {string} message
+     */
+    _appendAnkiDebugLine(message) {
+        if (this._ankiDebugPanel === null || this._ankiDebugLog === null) { return; }
+        this._ankiDebugPanel.hidden = false;
+        const timestamp = new Date().toLocaleTimeString();
+        this._ankiDebugLog.textContent += `[${timestamp}] ${message}\n`;
+    }
+
+    /**
+     * @param {unknown} error
+     * @returns {string}
+     */
+    _errorToString(error) {
+        if (error instanceof Error) {
+            const data = /** @type {{data?: unknown}} */ (error).data;
+            return typeof data !== 'undefined' ? `${error.message} | ${this._serializeErrorData(data)}` : error.message;
+        }
+        return `${error}`;
+    }
+
+    /**
+     * @param {unknown} data
+     * @returns {string}
+     */
+    _serializeErrorData(data) {
+        try {
+            return JSON.stringify(data);
+        } catch (e) {
+            return `${data}`;
+        }
+    }
+
+    /**
+     * @param {string} server
+     */
+    async _runNativeAnkiBridgeDebug(server) {
+        const applications = [];
+        const runtimeId = chrome.runtime.id;
+        applications.push(runtimeId);
+        applications.push(runtimeId.replace(/\s+\([^)]+\)$/, ''));
+        applications.push('dev.yomitan.safari.extension');
+        applications.push('dev.yomitan.safari');
+        applications.push('yomitan_anki');
+
+        for (const application of [...new Set(applications)].filter((value) => value.length > 0)) {
+            try {
+                const result = await this._sendNativeMessage(application, {
+                    action: 'ankiRequest',
+                    url: server,
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'version', params: {}, version: 2}),
+                });
+                this._appendAnkiDebugLine(`native ${application}: ${this._serializeErrorData(result)}`);
+            } catch (e) {
+                this._appendAnkiDebugLine(`native ${application} error: ${this._errorToString(e)}`);
+            }
+        }
+    }
+
+    /**
+     * @param {string} application
+     * @param {import('core').SerializableObject} message
+     * @returns {Promise<unknown>}
+     */
+    _sendNativeMessage(application, message) {
+        return new Promise((resolve, reject) => {
+            let handled = false;
+            const onResolve = (value) => {
+                if (handled) { return; }
+                handled = true;
+                resolve(value);
+            };
+            const onReject = (error) => {
+                if (handled) { return; }
+                handled = true;
+                reject(error instanceof Error ? error : new Error(`${error}`));
+            };
+
+            try {
+                const maybePromise = chrome.runtime.sendNativeMessage(application, message, (response) => {
+                    const runtimeError = chrome.runtime.lastError;
+                    if (runtimeError) {
+                        onReject(new Error(runtimeError.message));
+                    } else {
+                        onResolve(response);
+                    }
+                });
+
+                if (typeof maybePromise === 'object' && maybePromise !== null && typeof maybePromise.then === 'function') {
+                    maybePromise.then(onResolve, onReject);
+                }
+            } catch (e) {
+                onReject(e);
+            }
+        });
     }
 }
 

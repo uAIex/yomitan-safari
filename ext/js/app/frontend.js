@@ -206,6 +206,16 @@ export class Frontend {
             ['frontendGetPopupSelectionText', this._onApiGetPopupSelectionText.bind(this)],
             ['frontendGetPopupInfo',     this._onApiGetPopupInfo.bind(this)],
             ['frontendGetPageInfo',      this._onApiGetPageInfo.bind(this)],
+            ['frontendGetDefaultAnkiFieldTemplates', this._onApiGetDefaultAnkiFieldTemplates.bind(this)],
+            ['frontendIsAnkiConnected',  this._onApiIsAnkiConnected.bind(this)],
+            ['frontendGetAnkiNoteInfo',  this._onApiGetAnkiNoteInfo.bind(this)],
+            ['frontendAddAnkiNote',      this._onApiAddAnkiNote.bind(this)],
+            ['frontendUpdateAnkiNote',   this._onApiUpdateAnkiNote.bind(this)],
+            ['frontendViewNotes',        this._onApiViewNotes.bind(this)],
+            ['frontendSuspendAnkiCardsForNote', this._onApiSuspendAnkiCardsForNote.bind(this)],
+            ['frontendForceSync',        this._onApiForceSync.bind(this)],
+            ['frontendInjectAnkiNoteMedia', this._onApiInjectAnkiNoteMedia.bind(this)],
+            ['frontendParseText',        this._onApiParseText.bind(this)],
         ]);
         /* eslint-enable @stylistic/no-multi-spaces */
 
@@ -330,6 +340,69 @@ export class Frontend {
             url: window.location.href,
             documentTitle: document.title,
         };
+    }
+
+    _onApiGetDefaultAnkiFieldTemplates() {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendGetDefaultAnkiFieldTemplates');
+        return this._application.api.getDefaultAnkiFieldTemplates();
+    }
+
+    _onApiIsAnkiConnected() {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendIsAnkiConnected');
+        return this._application.api.isAnkiConnected();
+    }
+
+    _onApiGetAnkiNoteInfo({notes, fetchAdditionalInfo}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendGetAnkiNoteInfo', {noteCount: notes.length, fetchAdditionalInfo});
+        return this._application.api.getAnkiNoteInfo(notes, fetchAdditionalInfo);
+    }
+
+    _onApiAddAnkiNote({note}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendAddAnkiNote', {deckName: note.deckName, modelName: note.modelName});
+        return this._application.api.addAnkiNote(note);
+    }
+
+    _onApiUpdateAnkiNote({noteWithId}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendUpdateAnkiNote', {noteId: noteWithId.id});
+        return this._application.api.updateAnkiNote(noteWithId);
+    }
+
+    _onApiViewNotes({noteIds, mode, allowFallback}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendViewNotes', {noteCount: noteIds.length, mode, allowFallback});
+        return this._application.api.viewNotes(noteIds, mode, allowFallback);
+    }
+
+    _onApiSuspendAnkiCardsForNote({noteId}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendSuspendAnkiCardsForNote', {noteId});
+        return this._application.api.suspendAnkiCardsForNote(noteId);
+    }
+
+    _onApiForceSync() {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendForceSync');
+        return this._application.api.forceSync();
+    }
+
+    _onApiInjectAnkiNoteMedia({timestamp, definitionDetails, audioDetails, screenshotDetails, clipboardDetails, dictionaryMediaDetails}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendInjectAnkiNoteMedia', {
+            timestamp,
+            hasDefinitionDetails: definitionDetails !== null,
+            hasAudioDetails: audioDetails !== null,
+            hasScreenshotDetails: screenshotDetails !== null,
+            hasClipboardDetails: clipboardDetails !== null,
+            dictionaryMediaCount: dictionaryMediaDetails.length,
+        });
+        return this._application.api.injectAnkiNoteMedia(timestamp, definitionDetails, audioDetails, screenshotDetails, clipboardDetails, dictionaryMediaDetails);
+    }
+
+    _onApiParseText({text, optionsContext, scanLength, useInternalParser, useMecabParser}) {
+        console.info('[Yomitan][Safari][Frontend][Anki]', 'frontendParseText', {
+            textLength: text.length,
+            optionsContext,
+            scanLength,
+            useInternalParser,
+            useMecabParser,
+        });
+        return this._application.api.parseText(text, optionsContext, scanLength, useInternalParser, useMecabParser);
     }
 
     /** @type {import('application').ApiHandler<'frontendSetAllVisibleOverride'>} */

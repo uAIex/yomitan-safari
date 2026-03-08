@@ -265,6 +265,39 @@ h2.action-title {
     gap: 0.25em;
 }
 
+.action-container.action-debug {
+    width: 100%;
+    max-width: 265px;
+    padding-top: 0;
+}
+
+.action-debug-title {
+    width: 100%;
+    margin-bottom: 0.25em;
+    color: #666666;
+    font-size: 0.85em;
+    text-align: left;
+}
+
+.action-debug-log {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5.5em;
+    max-height: 9em;
+    margin: 0;
+    padding: 0.5em;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid #d0d7de;
+    border-radius: 4px;
+    background-color: #ffffff;
+    color: #333333;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78em;
+    text-align: left;
+}
+
 /* Actions */
 
 .action-container.action-select-profile {
@@ -372,5 +405,15 @@ select.profile-select {
     body:not([data-loaded=true]) {
         color: #cccccc;
         background-color: #1e1e1e;
+    }
+
+    .action-debug-title {
+        color: #a0a0a0;
+    }
+
+    .action-debug-log {
+        border-color: #444444;
+        background-color: #111111;
+        color: #dddddd;
     }
 }

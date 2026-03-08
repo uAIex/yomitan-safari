@@ -1254,7 +1254,7 @@ export class Display extends EventDispatcher {
      */
     _updateDocumentOptions(options) {
         const data = document.documentElement.dataset;
-        data.ankiEnabled = `${options.anki.enable}`;
+        data.ankiEnabled = `${options.anki.enable || this._isSafariWebExtension()}`;
         data.language = options.general.language;
         data.resultOutputMode = `${options.general.resultOutputMode}`;
         data.glossaryLayoutMode = `${options.general.glossaryLayoutMode}`;
@@ -1271,6 +1271,13 @@ export class Display extends EventDispatcher {
         data.popupCurrentIndicatorMode = `${options.general.popupCurrentIndicatorMode}`;
         data.popupActionBarVisibility = `${options.general.popupActionBarVisibility}`;
         data.popupActionBarLocation = `${options.general.popupActionBarLocation}`;
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    _isSafariWebExtension() {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
     }
 
     /**

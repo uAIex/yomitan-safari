@@ -203,6 +203,12 @@ def replace_bundle_identifier(match):
 
 
 pbxproj = re.sub(r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;", replace_bundle_identifier, pbxproj)
+pbxproj = re.sub(
+    r"(ENABLE_HARDENED_RUNTIME = YES;\n(\s+)ENABLE_USER_SELECTED_FILES = readonly;)",
+    r"ENABLE_HARDENED_RUNTIME = YES;\n\2ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;\n\1",
+    pbxproj,
+    count=2,
+)
 pbxproj_path.write_text(pbxproj, encoding="utf-8")
 
 view_controller = view_controller_path.read_text(encoding="utf-8")

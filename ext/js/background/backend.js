@@ -1552,12 +1552,13 @@ export class Backend {
         this._updateBadge();
 
         const enabled = options.general.enable;
+        const ankiEnabled = (options.anki.enable || this._isSafariWebExtension());
 
         /** @type {?string} */
         let apiKey = options.anki.apiKey;
         if (apiKey === '') { apiKey = null; }
         this._anki.server = options.anki.server;
-        this._anki.enabled = options.anki.enable;
+        this._anki.enabled = ankiEnabled;
         this._anki.apiKey = apiKey;
 
         this._mecab.setEnabled(options.parsing.enableMecabParser && enabled);
@@ -1577,6 +1578,13 @@ export class Backend {
         this._textParseCache.clear();
 
         this._sendMessageAllTabsIgnoreResponse({action: 'applicationOptionsUpdated', params: {source}});
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    _isSafariWebExtension() {
+        return chrome.runtime.getURL('/').startsWith('safari-web-extension://');
     }
 
     /**
