@@ -36,5 +36,5 @@ In Xcode:
 ## Scanning
 
 - Scanning is tracked per tab.
-- Press `Shift` once to enable auto scan for the current tab.
-- Press `Shift` again to disable auto scan for that tab.
+- Press your configured main scan modifier key once to enable auto scan for the current tab.
+- Press the same modifier key again to disable auto scan for that tab.
