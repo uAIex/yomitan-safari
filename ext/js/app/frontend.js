@@ -271,7 +271,6 @@ export class Frontend {
         window.addEventListener('scroll', this._onScroll.bind(this), true);
         window.addEventListener('keydown', this._onKeyDown.bind(this), true);
         window.addEventListener('keyup', this._onKeyUp.bind(this), true);
-        window.addEventListener('mouseup', this._onMouseUp.bind(this), true);
         document.addEventListener('selectionchange', this._onSelectionChange.bind(this), true);
         addFullscreenChangeEventListener(this._updatePopup.bind(this));
 
@@ -564,16 +563,6 @@ export class Frontend {
     /**
      * @returns {void}
      */
-    _onMouseUp() {
-        if (!this._isSafariInlinePopupMode() || !this._safariInlineScanEnabled || !this._textScanner.isEnabled()) { return; }
-        const selectionText = this._getActiveSelectionText();
-        if (selectionText.length === 0) { return; }
-        void this._searchSelectedTextDirect(selectionText);
-    }
-
-    /**
-     * @returns {void}
-     */
     _onScroll() {
         void this._updatePopupPosition();
     }
@@ -779,8 +768,11 @@ export class Frontend {
 
     /** */
     _onSelectionChange() {
-        // Mouse-up drives Safari inline selected-text lookup. Keeping this listener
-        // avoids churn elsewhere without triggering repeated lookups mid-selection.
+        if (!this._isSafariInlinePopupMode() || !this._safariInlineScanEnabled || !this._textScanner.isEnabled()) { return; }
+
+        const selection = window.getSelection();
+        if (selection === null || selection.toString().length === 0) { return; }
+        void this._searchSelectedTextDirect(selection.toString());
     }
 
     /**
@@ -1528,23 +1520,6 @@ export class Frontend {
         const themeController = new ThemeController(document.documentElement);
         const pageTheme = themeController.computeSiteTheme();
         this._showContent(textSource, true, dictionaryEntries, type, null, detail.documentTitle, optionsContext, pageTheme);
-    }
-
-    /**
-     * @returns {string}
-     */
-    _getActiveSelectionText() {
-        try {
-            const topSelection = window.top?.getSelection();
-            if (topSelection !== null && typeof topSelection !== 'undefined') {
-                const text = topSelection.toString();
-                if (text.length > 0) { return text; }
-            }
-        } catch (e) {
-            // NOP
-        }
-        const selection = window.getSelection();
-        return selection !== null ? selection.toString() : '';
     }
 
     /**
