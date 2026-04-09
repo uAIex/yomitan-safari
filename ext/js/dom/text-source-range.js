@@ -130,6 +130,15 @@ export class TextSourceRange {
     }
 
     /**
+     * Replaces the cached text content for this source.
+     * @param {string} content
+     * @returns {void}
+     */
+    setText(content) {
+        this._content = content;
+    }
+
+    /**
      * Moves the end offset of the text by a set amount of unicode codepoints.
      * @param {number} length The maximum number of codepoints to move by.
      * @param {boolean} fromEnd Whether to move the offset from the current end position (if `true`) or the start position (if `false`).

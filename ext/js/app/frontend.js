@@ -22,11 +22,99 @@ import {log} from '../core/log.js';
 import {promiseAnimationFrame} from '../core/promise-animation-frame.js';
 import {safePerformance} from '../core/safe-performance.js';
 import {setProfile} from '../data/profiles-util.js';
+import {ThemeController} from './theme-controller.js';
 import {addFullscreenChangeEventListener, getFullscreenElement} from '../dom/document-util.js';
 import {TextSourceElement} from '../dom/text-source-element.js';
 import {TextSourceGenerator} from '../dom/text-source-generator.js';
 import {TextSourceRange} from '../dom/text-source-range.js';
 import {TextScanner} from '../language/text-scanner.js';
+
+class InlineSelectionTextSource {
+    /**
+     * @param {string} content
+     */
+    constructor(content) {
+        /** @type {string} */
+        this._content = content;
+    }
+
+    /**
+     * @type {'element'}
+     */
+    get type() {
+        return 'element';
+    }
+
+    /**
+     * @returns {string}
+     */
+    text() {
+        return this._content;
+    }
+
+    /**
+     * @param {number} length
+     * @param {boolean} fromEnd
+     * @returns {number}
+     */
+    setEndOffset(length, fromEnd) {
+        const previousLength = this._content.length;
+        if (fromEnd) {
+            this._content = this._content.substring(0, Math.min(previousLength, length));
+        } else {
+            this._content = this._content.substring(0, Math.min(previousLength, length));
+        }
+        return previousLength - this._content.length;
+    }
+
+    /**
+     * @param {number} length
+     * @returns {number}
+     */
+    setStartOffset(length) {
+        const actualLength = Math.min(length, this._content.length);
+        this._content = this._content.substring(actualLength);
+        return actualLength;
+    }
+
+    /**
+     * @returns {DOMRect[]}
+     */
+    getRects() {
+        return [];
+    }
+
+    /**
+     * @returns {import('document-util').NormalizedWritingMode}
+     */
+    getWritingMode() {
+        return 'horizontal-tb';
+    }
+
+    /** */
+    cleanup() {}
+
+    /** */
+    select() {}
+
+    /** */
+    deselect() {}
+
+    /**
+     * @param {import('text-source').TextSource} other
+     * @returns {boolean}
+     */
+    hasSameStart(other) {
+        return typeof other === 'object' && other !== null && other instanceof InlineSelectionTextSource && this._content === other.text();
+    }
+
+    /**
+     * @returns {Node[]}
+     */
+    getNodesInRange() {
+        return document.body !== null ? [document.body] : [];
+    }
+}
 
 /**
  * This is the main class responsible for scanning and handling webpage content.
@@ -183,6 +271,7 @@ export class Frontend {
         window.addEventListener('scroll', this._onScroll.bind(this), true);
         window.addEventListener('keydown', this._onKeyDown.bind(this), true);
         window.addEventListener('keyup', this._onKeyUp.bind(this), true);
+        document.addEventListener('selectionchange', this._onSelectionChange.bind(this), true);
         addFullscreenChangeEventListener(this._updatePopup.bind(this));
 
         const {visualViewport} = window;
@@ -677,6 +766,15 @@ export class Frontend {
         }
     }
 
+    /** */
+    _onSelectionChange() {
+        if (!this._isSafariInlinePopupMode() || !this._safariInlineScanEnabled || !this._textScanner.isEnabled()) { return; }
+
+        const selection = window.getSelection();
+        if (selection === null || selection.toString().length === 0) { return; }
+        void this._searchSelectedTextDirect(selection.toString());
+    }
+
     /**
      * @returns {Promise<void>}
      */
@@ -1017,6 +1115,12 @@ export class Frontend {
      */
     async _ignorePoint(x, y) {
         try {
+            if (this._isSafariInlinePopupMode()) {
+                const selection = window.getSelection();
+                if (selection !== null && selection.toString().length > 0) {
+                    return true;
+                }
+            }
             return this._popup !== null && await this._popup.containsPoint(x, y);
         } catch (e) {
             if (!this._application.webExtension.unloaded) {
@@ -1187,21 +1291,37 @@ export class Frontend {
         const container = this._getTextIndicatorContainer();
         container.replaceChildren();
 
-        for (const {left, right, bottom} of rects) {
-            const width = Math.max(0, right - left);
-            if (width <= 0) { continue; }
+        const writingMode = textSource.getWritingMode();
+        const vertical = writingMode === 'vertical-rl' || writingMode === 'vertical-lr';
+
+        for (const {left, top, right, bottom} of rects) {
+            const inlineSize = vertical ? Math.max(0, bottom - top) : Math.max(0, right - left);
+            if (inlineSize <= 0) { continue; }
 
             const line = document.createElement('div');
-            Object.assign(line.style, {
-                position: 'fixed',
-                left: `${left}px`,
-                top: `${Math.max(0, bottom - 2)}px`,
-                width: `${width}px`,
-                height: '0',
-                borderBottom: '2px dotted #990020',
-                boxSizing: 'border-box',
-                pointerEvents: 'none',
-            });
+            if (vertical) {
+                Object.assign(line.style, {
+                    position: 'fixed',
+                    left: `${left}px`,
+                    top: `${top}px`,
+                    width: '0',
+                    height: `${inlineSize}px`,
+                    borderLeft: '2px dotted #990020',
+                    boxSizing: 'border-box',
+                    pointerEvents: 'none',
+                });
+            } else {
+                Object.assign(line.style, {
+                    position: 'fixed',
+                    left: `${left}px`,
+                    top: `${Math.max(0, bottom - 2)}px`,
+                    width: `${inlineSize}px`,
+                    height: '0',
+                    borderBottom: '2px dotted #990020',
+                    boxSizing: 'border-box',
+                    pointerEvents: 'none',
+                });
+            }
             container.appendChild(line);
         }
     }
@@ -1353,13 +1473,53 @@ export class Frontend {
      */
     async _scanSelectedText(allowEmptyRange, disallowExpandSelection, showEmpty = false) {
         safePerformance.mark('frontend:scanSelectedText:start');
-        const range = this._getFirstSelectionRange(allowEmptyRange);
-        if (range === null) { return false; }
-        const source = disallowExpandSelection ? TextSourceRange.createLazy(range) : TextSourceRange.create(range);
+        const selection = window.getSelection();
+        this._textScanner.setCurrentTextSource(null);
+        const selectionText = selection !== null ? selection.toString() : '';
+        let source;
+        if (this._isSafariInlinePopupMode() && selectionText.length > 0) {
+            source = new InlineSelectionTextSource(selectionText);
+        } else {
+            const range = this._getFirstSelectionRange(allowEmptyRange);
+            if (range === null) { return false; }
+            source = disallowExpandSelection ? TextSourceRange.createLazy(range) : TextSourceRange.create(range);
+            if (selectionText.length > 0) {
+                source.setText(selectionText);
+            }
+        }
         await this._textScanner.search(source, {focus: true, restoreSelection: true}, showEmpty);
         safePerformance.mark('frontend:scanSelectedText:end');
         safePerformance.measure('frontend:scanSelectedText', 'frontend:scanSelectedText:start', 'frontend:scanSelectedText:end');
         return true;
+    }
+
+    /**
+     * @param {string} selectionText
+     * @returns {Promise<void>}
+     */
+    async _searchSelectedTextDirect(selectionText) {
+        if (selectionText.length === 0) { return; }
+
+        const textSource = new InlineSelectionTextSource(selectionText);
+        this._textScanner.setCurrentTextSource(textSource);
+
+        const {optionsContext, detail} = await this._getSearchContext();
+        /** @type {import('dictionary').DictionaryEntry[]} */
+        let dictionaryEntries = (await this._application.api.termsFind(selectionText, {}, optionsContext)).dictionaryEntries;
+        /** @type {'terms'|'kanji'} */
+        let type = 'terms';
+        if (dictionaryEntries.length === 0) {
+            dictionaryEntries = await this._application.api.kanjiFind(selectionText[0], optionsContext);
+            type = 'kanji';
+        }
+        if (dictionaryEntries.length === 0) {
+            this._onSearchEmpty();
+            return;
+        }
+
+        const themeController = new ThemeController(document.documentElement);
+        const pageTheme = themeController.computeSiteTheme();
+        this._showContent(textSource, true, dictionaryEntries, type, null, detail.documentTitle, optionsContext, pageTheme);
     }
 
     /**
