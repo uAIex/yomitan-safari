@@ -1,5 +1,7 @@
 # Yomitan
 
+This extension supports scanning live text in images, the native OCR model for macOS. However, extensions cannot run in local files, so you will need a web based image viewer. See [https://github.com/uAIex/image-viewer](https://github.com/uAIex/image-viewer)
+
 Need a clipboard inserter? see [https://gist.github.com/uAIex/576ffe80772fdd14c08a87a3fd8c6ffb](https://gist.github.com/uAIex/576ffe80772fdd14c08a87a3fd8c6ffb)
 
 ## Building
