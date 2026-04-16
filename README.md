@@ -1,5 +1,7 @@
 # Yomitan
 
+Need a clipboard inserter? see [https://gist.github.com/uAIex/576ffe80772fdd14c08a87a3fd8c6ffb](https://gist.github.com/uAIex/576ffe80772fdd14c08a87a3fd8c6ffb)
+
 ## Building
 
 1. Install [Node.js](https://nodejs.org/) and [npm](https://www.npmjs.com/).
